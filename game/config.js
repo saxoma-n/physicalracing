@@ -3,7 +3,7 @@
 export const firebaseConfig = {
   apiKey: 'demo-key',
   authDomain: 'demo-physicalracing.firebaseapp.com',
-  databaseURL: 'http://127.0.0.1:9000?ns=demo-physicalracing',
+  databaseURL: 'https://demo-physicalracing-default-rtdb.firebaseio.com',
   projectId: 'demo-physicalracing',
   appId: 'demo-app',
 };

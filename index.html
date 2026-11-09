@@ -19,7 +19,29 @@
     <h2>Solo practice</h2>
     <div id="solo-tracks" class="track-list"></div>
   </section>
+  <section>
+    <h2>Race friends</h2>
+    <div class="row">
+      <button id="create" class="primary">Create room</button>
+      <input id="code" maxlength="4" autocomplete="off" spellcheck="false" placeholder="CODE" aria-label="Room code">
+      <button id="join">Join</button>
+    </div>
+    <p id="net-msg" class="error" role="status"></p>
+  </section>
   <p class="hint">Arrows / WASD to drive · R to respawn · Esc for menu</p>
+</main>
+<main id="lobby" class="panel" hidden>
+  <p class="kicker">Room code</p>
+  <h1 id="lobby-code" class="code"></h1>
+  <p class="hint left">Friends join with this code.</p>
+  <h2>Players</h2>
+  <ul id="lobby-players" class="players"></ul>
+  <div id="host-controls">
+    <label class="field">Track <select id="lobby-track"></select></label>
+    <button id="start" class="primary wide">Start race</button>
+  </div>
+  <p id="lobby-msg" class="hint left" role="status"></p>
+  <button id="leave" class="wide">Leave room</button>
 </main>
 <script type="module" src="game/main.js"></script>
 </body>
