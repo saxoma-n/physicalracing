@@ -10,6 +10,17 @@
 <body>
 <canvas id="view"></canvas>
 <div id="hud"></div>
+<main id="menu" class="panel">
+  <h1>Physical Racing</h1>
+  <label class="field">Nickname
+    <input id="name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Your name">
+  </label>
+  <section>
+    <h2>Solo practice</h2>
+    <div id="solo-tracks" class="track-list"></div>
+  </section>
+  <p class="hint">Arrows / WASD to drive · R to respawn · Esc for menu</p>
+</main>
 <script type="module" src="game/main.js"></script>
 </body>
 </html>

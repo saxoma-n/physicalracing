@@ -78,3 +78,42 @@ test('car falls when driven off the end of the track', () => {
   drive(phys, { throttle: 1, steer: 0, brake: 0 }, 5);
   assert.ok(phys.car.pose().pos[1] < -5);
 });
+
+test('a ramp-up, one gap, ramp-down jump can be landed at full throttle', () => {
+  const pieces = [{ type: 'start', x: 0, y: 0, z: 0, rot: 0 }];
+  for (let z = 1; z <= 8; z++) pieces.push({ type: 'straight', x: 0, y: 0, z, rot: 0 });
+  pieces.push({ type: 'ramp-up', x: 0, y: 0, z: 9, rot: 0 }, { type: 'gap', x: 0, y: 0, z: 10, rot: 0 }, { type: 'ramp-down', x: 0, y: 0, z: 11, rot: 0 });
+  for (let z = 12; z <= 16; z++) pieces.push({ type: 'straight', x: 0, y: 0, z, rot: 0 });
+  pieces.push({ type: 'finish', x: 0, y: 0, z: 17, rot: 0 });
+  const L = layoutTrack({ name: 'j', pieces }), phys = createPhysics(RAPIER, L);
+  phys.car.teleport(L.start);
+  phys.car.setControls({ throttle: 1, steer: 0, brake: 0 });
+  let landed = false;
+  for (let i = 0; i < 600 && !landed; i++) {
+    phys.step();
+    const [, y, z] = phys.car.pose().pos;
+    if (z > 125) landed = y > 0;
+    if (y < -3) break;
+  }
+  assert.ok(landed, `ended at ${phys.car.pose().pos.map(n => n.toFixed(1))}`);
+});
+
+test('a one-cell left turn can be taken at a sensible speed by steering fully', () => {
+  const pieces = [{ type: 'start', x: 0, y: 0, z: 0, rot: 0 }];
+  for (let z = 1; z <= 3; z++) pieces.push({ type: 'straight', x: 0, y: 0, z, rot: 0 });
+  pieces.push({ type: 'turn', x: 0, y: 0, z: 4, rot: 0 });
+  for (let x = 1; x <= 4; x++) pieces.push({ type: 'straight', x, y: 0, z: 4, rot: 1 });
+  pieces.push({ type: 'finish', x: 5, y: 0, z: 4, rot: 1 });
+  const L = layoutTrack({ name: 't', pieces }), phys = createPhysics(RAPIER, L);
+  phys.car.teleport(L.start);
+  // simple driver: hold ~12 m/s, steer left once the turn starts
+  for (let i = 0; i < 600; i++) {
+    const [x, , z] = phys.car.pose().pos, v = phys.car.speed();
+    if (x > 30) break;
+    const turning = z > 33 && x < 5;
+    phys.car.setControls({ throttle: v < 12 ? 1 : 0, brake: 0, steer: turning ? 1 : 0 });
+    phys.step();
+  }
+  const [x, y, z] = phys.car.pose().pos;
+  assert.ok(y > 0 && x > 30 && Math.abs(z - 40) < 4, `ended at ${[x, y, z].map(n => n.toFixed(1))}`);
+});

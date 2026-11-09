@@ -1,0 +1,6 @@
+[
+  { "id": "warmup", "name": "Warmup" },
+  { "id": "loops", "name": "Loops" },
+  { "id": "skyline", "name": "Skyline" },
+  { "id": "gauntlet", "name": "Gauntlet" }
+]
