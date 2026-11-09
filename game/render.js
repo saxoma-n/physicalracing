@@ -61,7 +61,9 @@ function gate(kind, checker) {
 }
 
 export function makeCarMesh(color = 0xe8553d) {
-  const car = new THREE.Group();
+  const outer = new THREE.Group(), car = new THREE.Group();
+  car.position.y = -0.3; // physics wheels hang lower than the model's; drop the model to touch the road
+  outer.add(car);
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 3.6), mat(color));
   body.position.y = 0.15;
   const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.45, 1.6), mat(0x2b3245));
@@ -75,7 +77,7 @@ export function makeCarMesh(color = 0xe8553d) {
   }
   car.add(body, cabin);
   car.traverse(o => { o.castShadow = true; });
-  return car;
+  return outer;
 }
 
 function nameLabel(name) {

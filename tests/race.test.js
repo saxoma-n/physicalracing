@@ -59,3 +59,10 @@ test('needsRespawn true when x or z is more than 20 outside bounds', () => {
 test('needsRespawn false on the track', () => {
   assert.equal(needsRespawn(L, at(2)), false);
 });
+
+test('formatTime shows m:ss.mmm', async () => {
+  const { formatTime } = await import('../game/race.js');
+  assert.equal(formatTime(0), '0:00.000');
+  assert.equal(formatTime(61234.5), '1:01.234');
+  assert.equal(formatTime(9999), '0:09.999');
+});

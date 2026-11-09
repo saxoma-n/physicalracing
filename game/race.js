@@ -30,3 +30,9 @@ export function needsRespawn(layout, [x, y, z]) {
     || x < min[0] - SIDE_MARGIN || x > max[0] + SIDE_MARGIN
     || z < min[2] - SIDE_MARGIN || z > max[2] + SIDE_MARGIN;
 }
+
+export function formatTime(ms) {
+  const t = Math.floor(ms);
+  const m = Math.floor(t / 60000), s = Math.floor(t / 1000) % 60, f = t % 1000;
+  return `${m}:${String(s).padStart(2, '0')}.${String(f).padStart(3, '0')}`;
+}
