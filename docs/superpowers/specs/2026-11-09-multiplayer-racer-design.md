@@ -64,7 +64,7 @@ Each piece type is defined once in code. That definition produces both the visib
 
 ## Race rules
 
-- Point to point: **start → checkpoints in order → finish**. No laps.
+- Point to point: **start → checkpoints in order → finish**. No laps in phase 1 (lap voting is phase 2).
 - A checkpoint counts only when it is the next one in order.
 - **Falling off:** a car is respawned at its last checkpoint (or the start), facing forward and at rest, when either of these happens:
   - it drops below the track's lowest piece by a fixed margin, or
@@ -147,7 +147,18 @@ GitHub Pages has no scheduled jobs, so clients do the cleanup:
 2. Track format, all piece types, and the built-in tracks, plus a solo time trial with checkpoints and a finish.
 3. Multiplayer: rooms, lobby, countdown, ghost cars, results, presence, cleanup and security rules.
 4. Deploy to GitHub Pages automatically on push to `main`, via GitHub Actions.
-5. **Phase 2 (separate spec):** track editor and share codes.
+5. **Phase 2 (separate spec):** see below.
+
+## Phase 2 (to be detailed in its own spec)
+
+- **Track editor + shared track library:**
+  - A track saved in the editor appears automatically on the track-list page for everyone. It is stored in Firebase, with no codes to paste.
+  - Share codes remain as a backup way to move a track around.
+- **Track voting:** in the lobby, every player votes for a track. The host's Start uses the winning track, with ties broken at random.
+- **Lap voting:** in the lobby, every player votes for 1, 2 or 3 laps.
+  - Laps apply only to **circuit tracks**: tracks where the finish line is also the start.
+  - Point-to-point tracks always run once.
+  - The track format gains a `circuit: true` flag for this.
 
 ## Out of scope
 
@@ -155,7 +166,6 @@ GitHub Pages has no scheduled jobs, so clients do the cleanup:
 - Collisions between cars
 - Accounts
 - Persistent leaderboards
-- Laps
 - Gamepad and touch controls
 - Mobile support
 - Sound (to be decided later)
