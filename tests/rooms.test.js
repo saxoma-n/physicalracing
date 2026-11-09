@@ -72,3 +72,11 @@ test('raceOver ignores finish times from before this race started', () => {
   const players = { a: P(true, 1000), b: P(true) }; // a finished the PREVIOUS race and missed this one
   assert.equal(raceOver(players, startAt + 1000, startAt), false);
 });
+
+test('colorFor gives each player a stable palette colour', async () => {
+  const { colorFor, CAR_COLORS } = await import('../game/net/rooms.js');
+  assert.equal(colorFor('abc123'), colorFor('abc123'));
+  const seen = new Set(['u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'u7', 'u8', 'zz', 'K3TFa5'].map(colorFor));
+  for (const c of seen) assert.ok(CAR_COLORS.includes(c));
+  assert.ok(seen.size >= 4, 'colours should spread across the palette');
+});

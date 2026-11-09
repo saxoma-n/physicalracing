@@ -1,11 +1,11 @@
 import RAPIER from '../vendor/rapier.es.js';
-import { createRenderer } from './render.js';
+import { createRenderer, CAR_RED } from './render.js';
 import { createHud } from './hud.js';
 import { createInput } from './input.js';
 import { createSession } from './session.js';
 import { createBuffer } from './net/interp.js';
 import { layoutTrack, validateTrack } from './track.js';
-import { validateName, nextHost, raceOver } from './net/rooms.js';
+import { validateName, nextHost, raceOver, colorFor } from './net/rooms.js';
 
 await RAPIER.init();
 const renderer = createRenderer(document.getElementById('view'));
@@ -54,6 +54,7 @@ export async function showMenu() {
 export function runSolo(layout) {
   stopCurrent?.();
   $('menu').hidden = true;
+  renderer.player.setColor(CAR_RED);
   const now = () => performance.now();
   const session = createSession({
     RAPIER, renderer, hud, input, layout, now, startAt: now() + COUNTDOWN_MS,
@@ -145,7 +146,7 @@ export function runMulti(code) {
     for (const [id, p] of Object.entries(players)) {
       if (id === uid || !p.raced || !p.pos) continue;
       let g = ghosts.get(id);
-      if (!g) { g = { ghost: renderer.addGhost(id, p.name), buffer: createBuffer(), last: null }; ghosts.set(id, g); }
+      if (!g) { g = { ghost: renderer.addGhost(id, p.name, colorFor(id)), buffer: createBuffer(), last: null }; ghosts.set(id, g); }
       if (g.last !== p.pos) { // room snapshots also arrive for other fields: only push real moves
         g.last = p.pos;
         g.buffer.push(performance.now(), [p.pos.x, p.pos.y, p.pos.z], [p.pos.qx, p.pos.qy, p.pos.qz, p.pos.qw]);
@@ -220,6 +221,7 @@ export function runMulti(code) {
     finished = false;
     await net.updateMe({ checkpoint: 0, finishTime: null, raced: true });
     if (left || raceStartAt !== r.startAt) return;
+    renderer.player.setColor(colorFor(uid));
     session?.stop(); // we may have missed the 'lobby' state that normally ends the last race
     session = createSession({
       RAPIER, renderer, hud, input, layout, now: net.serverNow, startAt: r.startAt,
