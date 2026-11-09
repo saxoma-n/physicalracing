@@ -1,0 +1,10 @@
+{ "name": "Test", "pieces": [
+  { "type": "start",      "x": 0, "y": 0, "z": 0, "rot": 0 },
+  { "type": "straight",   "x": 0, "y": 0, "z": 1, "rot": 0 },
+  { "type": "straight",   "x": 0, "y": 0, "z": 2, "rot": 0 },
+  { "type": "straight",   "x": 0, "y": 0, "z": 3, "rot": 0 },
+  { "type": "turn",       "x": 0, "y": 0, "z": 4, "rot": 0 },
+  { "type": "checkpoint", "x": 1, "y": 0, "z": 4, "rot": 1 },
+  { "type": "slope",      "x": 2, "y": 0, "z": 4, "rot": 1 },
+  { "type": "finish",     "x": 3, "y": 1, "z": 4, "rot": 1 }
+]}
