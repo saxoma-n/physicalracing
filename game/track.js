@@ -31,7 +31,7 @@ function boxOf(piece) {
 }
 
 export function layoutTrack(track) {
-  const pieces = track.pieces.map(p => ({ type: p.type, pos: pieceTransform(p).pos, rot: p.rot }));
+  const pieces = track.pieces.map(p => ({ ...p, pos: pieceTransform(p).pos }));
   const boxes = track.pieces.map(boxOf);
   const bounds = {
     min: [0, 1, 2].map(k => Math.min(...boxes.map(b => b.min[k]))),

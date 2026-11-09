@@ -1,0 +1,4 @@
+:root { --ink: #1d2333; --panel: rgba(255, 255, 255, .92); --accent: #e8553d; --muted: #5b6478; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #e4f3ff; color: var(--ink); font: 16px/1.4 system-ui, sans-serif; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }

@@ -121,3 +121,8 @@ test('tracks/test.json is valid', async () => {
   const t = JSON.parse(await readFile(new URL('../tracks/test.json', import.meta.url)));
   assert.deepEqual(validateTrack(t), []);
 });
+
+test('layout pieces keep grid fields so worldGeometry can consume them', () => {
+  const L = layoutTrack(minimal());
+  assert.deepEqual(worldGeometry(L.pieces[1]), worldGeometry(minimal().pieces[1]));
+});
