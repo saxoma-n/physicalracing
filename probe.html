@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>School network check</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 40rem; padding: 0 1rem; background: #f6f7fb; color: #1d2333; }
+  li { margin: .4rem 0; }
+  .pass { color: #13753a; } .fail { color: #b3261e; } .wait { color: #6b7280; }
+</style>
+</head>
+<body>
+<h1>School network check</h1>
+<p>Open this on a school computer. All four lines should say PASS.</p>
+<ul id="out"></ul>
+<script type="module">
+import { firebaseConfig, useEmulator, FIREBASE_SDK } from './game/config.js';
+
+const out = document.getElementById('out');
+function line(label) {
+  const li = document.createElement('li');
+  li.className = 'wait';
+  li.textContent = `… ${label}`;
+  out.append(li);
+  return (ok, detail = '') => {
+    li.className = ok ? 'pass' : 'fail';
+    li.textContent = `${ok ? 'PASS' : 'FAIL'} ${label}${detail ? ' — ' + detail : ''}`;
+  };
+}
+const timeout = (ms, what) => new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} timed out`)), ms));
+
+const gl = line('WebGL2 graphics');
+gl(!!document.createElement('canvas').getContext('webgl2'));
+
+const rap = line('Physics engine (Rapier) loads');
+try {
+  const RAPIER = (await import('./vendor/rapier.es.js')).default;
+  await RAPIER.init();
+  rap(true, 'v' + RAPIER.version());
+} catch (e) { rap(false, e.message); }
+
+const auth = line('Firebase sign-in');
+const conn = line('Firebase realtime connection');
+try {
+  const { initializeApp } = await import(`${FIREBASE_SDK}/firebase-app.js`);
+  const A = await import(`${FIREBASE_SDK}/firebase-auth.js`);
+  const D = await import(`${FIREBASE_SDK}/firebase-database.js`);
+  const app = initializeApp(firebaseConfig);
+  const a = A.getAuth(app);
+  const db = D.getDatabase(app);
+  if (useEmulator) { A.connectAuthEmulator(a, 'http://127.0.0.1:9099', { disableWarnings: true }); D.connectDatabaseEmulator(db, '127.0.0.1', 9000); }
+  try {
+    const cred = await Promise.race([A.signInAnonymously(a), timeout(10000, 'sign-in')]);
+    auth(true, useEmulator ? 'local emulator' : 'uid ' + cred.user.uid.slice(0, 6));
+  } catch (e) { auth(false, e.message); }
+  try {
+    await Promise.race([new Promise(res => D.onValue(D.ref(db, '.info/connected'), s => s.val() && res())), timeout(10000, 'connection')]);
+    conn(true);
+  } catch (e) { conn(false, e.message); }
+} catch (e) { auth(false, 'could not load Firebase: ' + e.message); conn(false, 'could not load Firebase'); }
+</script>
+</body>
+</html>

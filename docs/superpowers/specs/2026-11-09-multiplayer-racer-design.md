@@ -1,0 +1,171 @@
+# physicalracing — Design Spec
+
+Date: 2026-11-09
+Status: Approved in brainstorming, pending written review
+
+## Purpose
+
+A low-poly time-trial-style racing game for a group of friends, played live together in the browser on restricted school computers. It belongs to the same genre as Polytrack and matches its mechanics and handling feel closely. Its visuals are original: our own car, track pieces, palette, UI and name.
+
+**Success looks like:** friends on school computers open a GitHub Pages URL, one creates a room, the others join with a 4-letter code, and everyone races the same track at once and sees each other's cars.
+
+## Constraints
+
+- **Hosting:** GitHub Pages only (static files). No server code anywhere.
+- **School computers:** assume CDNs may be filtered and DevTools may be disabled. Ship all libraries in the repo, except Firebase, which loads from Google's `gstatic.com`.
+- **Players:** up to 8 per room, keyboard only (arrow keys / WASD, R to respawn).
+- **No build step:** plain ES modules. Edit a file, refresh the page.
+
+## Architecture
+
+| Piece | Choice |
+|---|---|
+| Rendering | Three.js, copy kept in the repo |
+| Car physics | Rapier (compat/WASM build), copy kept in the repo; uses its raycast vehicle controller |
+| Multiplayer | Firebase Realtime Database + Firebase Anonymous Auth |
+| Code | Plain JavaScript ES modules, no framework |
+
+```
+GitHub Pages
+  index.html  → menu: nickname, create room / join by code, solo practice
+  game/       → renderer, physics, track builder, race logic, netcode
+  tracks/     → built-in tracks as JSON
+  vendor/     → three, rapier
+```
+
+- Each player simulates **only their own car**. Remote cars are positions shown as non-colliding ghosts.
+- Each client decides its own finish time and reports it. **No cheat protection:** this is out of scope by design, since clients are trusted friends.
+
+## Tracks
+
+### Format
+
+Built-in tracks and phase-2 editor tracks share one format:
+
+```json
+{ "name": "Warmup", "pieces": [
+  { "type": "start", "x": 0, "y": 0, "z": 0, "rot": 0 }
+]}
+```
+
+- `x, y, z` are integer grid cells.
+- `rot` is a quarter-turn count, 0–3.
+- A track is valid if it has exactly one `start`, exactly one `finish`, and only known piece types. The loader rejects invalid tracks with a clear error.
+
+### Piece types (phase 1)
+
+`start`, `finish`, `checkpoint`, `straight`, `turn` (90°), `ramp-up`, `ramp-down`, `slope`, `gap` (jump).
+
+Each piece type is defined once in code. That definition produces both the visible mesh and the physics collider, so what you see is what you drive on.
+
+### Built-in tracks
+
+3–4 tracks, ranging from an easy warm-up to a harder track with jumps.
+
+## Race rules
+
+- Point to point: **start → checkpoints in order → finish**. No laps in phase 1 (lap voting is phase 2).
+- A checkpoint counts only when it is the next one in order.
+- **Falling off:** a car is respawned at its last checkpoint (or the start), facing forward and at rest, when either of these happens:
+  - it drops below the track's lowest piece by a fixed margin, or
+  - it leaves the track's bounding box plus a margin.
+- **R:** respawns at the last checkpoint immediately. The race clock keeps running.
+- **Solo practice:** the same rules with no network. It is always available, including when Firebase is unreachable.
+
+## Multiplayer
+
+### Room flow
+
+1. The player enters a nickname, then chooses **Create room** or **Join** with a code.
+2. Room codes are 4 letters from an alphabet with no look-alike characters (no O/0, I/1). The creator becomes host.
+3. **Lobby:** shows the player list. The host picks a track and presses Start.
+4. **Countdown:** the host writes `startAt = server time + 4 s`. Clients align to server time using Firebase's `.info/serverTimeOffset`, so local clock errors don't matter. The countdown shows 3-2-1-GO.
+5. **Racing:** results update live as players finish. The race ends when every player has finished, or 60 s after the first finisher. Then everyone returns to the lobby.
+
+### Data
+
+```
+rooms/<CODE>/
+  host:        <uid>
+  track:       <track id>
+  state:       "lobby" | "countdown" | "racing"
+  startAt:     <server ms>
+  lastActive:  <server ms>
+  players/<uid>/
+    name, joinedAt, checkpoint, finishTime,
+    pos: { x, y, z, qx, qy, qz, qw }
+```
+
+### Netcode
+
+- Each client writes its own `pos` about 15 times a second.
+- Remote cars render about 100 ms in the past, interpolating between the last two snapshots.
+- No prediction and no collisions.
+
+### Presence and failure handling
+
+- `onDisconnect().remove()` on the player's own entry, so closed tabs disappear within seconds.
+- **Host leaves:** the remaining player with the earliest `joinedAt` becomes host.
+- **Firebase unreachable:** show "Can't connect to multiplayer". Solo practice still works.
+
+### Room cleanup
+
+GitHub Pages has no scheduled jobs, so clients do the cleanup:
+
+- The host's browser updates `lastActive` every 30 s.
+- Before creating a room, a client queries rooms with `lastActive` older than 1 hour and deletes them. `lastActive` is indexed for this query (`.indexOn`).
+
+### Security rules
+
+- All access requires (anonymous) auth.
+- A player may write only `players/<their uid>`.
+- Room-level fields (`track`, `state`, `startAt`, `lastActive`) are writable only by the current host.
+- `host` may be changed by the current host, or by any player once the current host's player entry no longer exists (host migration).
+- A room may be created only if it does not already exist.
+- A room may be deleted by anyone only when its `lastActive` is more than 1 hour old.
+- Writes are validated for shape: numbers are numbers, names are short strings.
+
+## Testing
+
+- **Node built-in test runner** (`node --test`) for pure logic:
+  - checkpoint ordering
+  - respawn conditions
+  - room-code generation
+  - the stale-room check
+  - track validation and loading
+- **Firebase emulator** for the security rules:
+  - a player cannot write another player's entry
+  - a non-host cannot change room fields
+  - a live room cannot be deleted
+  - a stale room can be deleted
+- **Driving feel** is tuned by hand while playing. All handling constants (grip, top speed, suspension, jump) live in one file.
+
+## Build order
+
+0. **School-network check.** A test page that reports whether WebGL works, Rapier loads, and Firebase connects and authenticates. It must pass on a school computer before anything else is built.
+1. Solo driving on a test track: car, physics, chase camera, respawn and R.
+2. Track format, all piece types, and the built-in tracks, plus a solo time trial with checkpoints and a finish.
+3. Multiplayer: rooms, lobby, countdown, ghost cars, results, presence, cleanup and security rules.
+4. Deploy to GitHub Pages automatically on push to `main`, via GitHub Actions.
+5. **Phase 2 (separate spec):** see below.
+
+## Phase 2 (to be detailed in its own spec)
+
+- **Track editor + shared track library:**
+  - A track saved in the editor appears automatically on the track-list page for everyone. It is stored in Firebase, with no codes to paste.
+  - Share codes remain as a backup way to move a track around.
+- **Track voting:** in the lobby, every player votes for a track. The host's Start uses the winning track, with ties broken at random.
+- **Lap voting:** in the lobby, every player votes for 1, 2 or 3 laps.
+  - Laps apply only to **circuit tracks**: tracks where the finish line is also the start.
+  - Point-to-point tracks always run once.
+  - The track format gains a `circuit: true` flag for this.
+
+## Out of scope
+
+- Cheat protection
+- Collisions between cars
+- Accounts
+- Persistent leaderboards
+- Gamepad and touch controls
+- Mobile support
+- Sound (to be decided later)
