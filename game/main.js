@@ -3,6 +3,7 @@ import { createRenderer } from './render.js';
 import { createHud } from './hud.js';
 import { createInput } from './input.js';
 import { createSession } from './session.js';
+import { createBuffer } from './net/interp.js';
 import { layoutTrack, validateTrack } from './track.js';
 import { validateName, nextHost, raceOver } from './net/rooms.js';
 
@@ -129,7 +130,47 @@ export function runMulti(code) {
   $('lobby').hidden = false;
   $('lobby-code').textContent = code;
   const uid = net.myUid();
-  let room = null, session = null, raceStartAt = null, overSince = null, menuStop = null;
+  let room = null, session = null, raceStartAt = null, overSince = null, menuStop = null, finished = false;
+  const ghosts = new Map(); // uid -> { ghost, buffer, last }
+  let lastSent = 0;
+  const SEND_MS = 66; // ~15 Hz
+  const GHOST_DELAY_MS = 100;
+  const r2 = n => Math.round(n * 100) / 100, r4 = n => Math.round(n * 10000) / 10000;
+
+  function syncGhosts() {
+    const players = session ? room.players ?? {} : {};
+    for (const [id, g] of ghosts) {
+      if (!players[id]?.raced) { renderer.removeGhost(id); ghosts.delete(id); }
+    }
+    for (const [id, p] of Object.entries(players)) {
+      if (id === uid || !p.raced || !p.pos) continue;
+      let g = ghosts.get(id);
+      if (!g) { g = { ghost: renderer.addGhost(id, p.name), buffer: createBuffer(), last: null }; ghosts.set(id, g); }
+      if (g.last !== p.pos) { // room snapshots also arrive for other fields: only push real moves
+        g.last = p.pos;
+        g.buffer.push(performance.now(), [p.pos.x, p.pos.y, p.pos.z], [p.pos.qx, p.pos.qy, p.pos.qz, p.pos.qw]);
+      }
+    }
+  }
+
+  function drawGhosts() {
+    const t = performance.now() - GHOST_DELAY_MS;
+    for (const { ghost, buffer } of ghosts.values()) {
+      const s = buffer.sample(t);
+      if (s) ghost.setPose(s.pos, s.quat);
+    }
+  }
+
+  function showResults() {
+    if (!session || !room) return;
+    const over = raceOver(room.players, net.serverNow());
+    if (!finished && !over) return;
+    const rows = Object.values(room.players ?? {}).filter(p => p.raced)
+      .map(p => ({ name: p.name, ms: typeof p.finishTime === 'number' ? Math.max(0, p.finishTime - room.startAt) : null }))
+      .sort((a, b) => (a.ms ?? Infinity) - (b.ms ?? Infinity));
+    hud.results(rows, over ? 'Race over' : 'Results');
+    hud.message(over ? 'Back to the lobby in a moment…' : 'Finished! Waiting for the others…');
+  }
   const timers = [];
 
   const isHost = () => room?.host === uid;
@@ -137,6 +178,7 @@ export function runMulti(code) {
   function showLobby() {
     session?.stop();
     session = null;
+    syncGhosts();
     raceStartAt = null;
     $('lobby').hidden = false;
     menuStop ??= orbit(currentLayout ?? fallbackLayout);
@@ -174,14 +216,26 @@ export function runMulti(code) {
     currentLayout = layout;
     if (raceStartAt !== r.startAt) return; // a newer state arrived while loading
     $('lobby').hidden = true;
+    finished = false;
     await net.updateMe({ checkpoint: 0, finishTime: null, raced: true });
     session = createSession({
       RAPIER, renderer, hud, input, layout, now: net.serverNow, startAt: r.startAt,
       onEvent(evt, race) {
         if (evt === 'checkpoint') net.updateMe({ checkpoint: race.next });
-        if (evt === 'finish') { net.updateMe({ finishTime: net.serverNow() }); hud.message('Finished! Waiting for the others…'); }
+        if (evt === 'finish') {
+          finished = true;
+          net.updateMe({ finishTime: net.serverNow() }).then(showResults);
+        }
+      },
+      onFrame({ pos, quat }) {
+        drawGhosts();
+        const t = performance.now();
+        if (t - lastSent < SEND_MS) return;
+        lastSent = t;
+        net.updateMe({ pos: { x: r2(pos[0]), y: r2(pos[1]), z: r2(pos[2]), qx: r4(quat[0]), qy: r4(quat[1]), qz: r4(quat[2]), qw: r4(quat[3]) } });
       },
     });
+    syncGhosts();
   }
 
   function onRoom(r) {
@@ -190,6 +244,8 @@ export function runMulti(code) {
     if (!r.players?.[uid]) return; // our entry is being re-added after a reconnect
     if (!r.players[r.host] && nextHost(r.players) === uid) net.claimHost(code);
     renderLobby();
+    syncGhosts();
+    showResults();
     const inCountdown = r.state === 'countdown' && net.serverNow() < r.startAt;
     if (inCountdown && raceStartAt !== r.startAt) startRace(r);
     if (r.state === 'lobby' && raceStartAt !== null) showLobby();
@@ -197,6 +253,7 @@ export function runMulti(code) {
 
   // host duties: heartbeat, countdown → racing, race end → lobby
   timers.push(setInterval(() => { if (isHost()) net.heartbeat(code); }, 30000));
+  timers.push(setInterval(showResults, 1000)); // the 60 s grace ends without any room change
   timers.push(setInterval(() => {
     if (!isHost() || !room) return;
     const now = net.serverNow();
@@ -214,6 +271,8 @@ export function runMulti(code) {
   async function leave(message) {
     timers.forEach(clearInterval);
     session?.stop();
+    session = null;
+    syncGhosts();
     menuStop?.();
     leaveCurrent = null;
     $('lobby').hidden = true;
