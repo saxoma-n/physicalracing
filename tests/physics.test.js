@@ -117,3 +117,9 @@ test('a one-cell left turn can be taken at a sensible speed by steering fully', 
   const [x, y, z] = phys.car.pose().pos;
   assert.ok(y > 0 && x > 30 && Math.abs(z - 40) < 4, `ended at ${[x, y, z].map(n => n.toFixed(1))}`);
 });
+
+test('free() releases the physics world so repeated races do not leak', () => {
+  const L = straight(3), phys = createPhysics(RAPIER, L);
+  phys.free();
+  assert.throws(() => phys.step()); // world is gone
+});

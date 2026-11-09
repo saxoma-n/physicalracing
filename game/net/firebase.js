@@ -6,7 +6,10 @@ let D, db, uid = null, offset = 0;
 let me = null; // { ref, data } for my entry in the current room
 const unsubs = [];
 
-const timeout = (ms, what) => new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} timed out`)), ms));
+const timeout = (ms, what) => new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(`${what} timed out`), { timeout: true })), ms));
+// sign-in can succeed on networks that block the database socket: never wait forever on the database
+const NET_MS = 10000;
+const within = (promise, what) => Promise.race([promise, timeout(NET_MS, what)]);
 
 export async function connect() {
   if (uid) return { uid };
@@ -40,7 +43,7 @@ export const serverNow = () => Date.now() + offset;
 const roomRef = (code, path = '') => D.ref(db, `rooms/${code}${path}`);
 
 export async function sweepStale() {
-  const old = await D.get(D.query(D.ref(db, 'rooms'), D.orderByChild('lastActive'), D.endAt(serverNow() - STALE_MS)));
+  const old = await within(D.get(D.query(D.ref(db, 'rooms'), D.orderByChild('lastActive'), D.endAt(serverNow() - STALE_MS))), 'cleanup');
   const codes = Object.keys(old.val() ?? {});
   await Promise.all(codes.map(c => D.remove(roomRef(c)).catch(() => {})));
   return codes.length;
@@ -48,19 +51,19 @@ export async function sweepStale() {
 
 async function enter(code, name) {
   me = { ref: roomRef(code, `/players/${uid}`), data: { name, joinedAt: serverNow(), checkpoint: 0, raced: false } };
-  await D.set(me.ref, me.data);
+  await within(D.set(me.ref, me.data), 'joining');
   await D.onDisconnect(me.ref).remove();
 }
 
 export async function createRoom(name, track) {
-  await sweepStale().catch(() => {});
+  await sweepStale().catch(e => { if (e.timeout) throw e; });
   for (let i = 0; i < 5; i++) {
     const code = makeRoomCode();
     const data = { name, joinedAt: serverNow(), checkpoint: 0, raced: false };
     try {
       // rules refuse to overwrite an existing room, so a taken code just fails and we pick another
-      await D.set(roomRef(code), { host: uid, track, state: 'lobby', lastActive: D.serverTimestamp(), players: { [uid]: data } });
-    } catch { continue; }
+      await within(D.set(roomRef(code), { host: uid, track, state: 'lobby', lastActive: D.serverTimestamp(), players: { [uid]: data } }), 'creating room');
+    } catch (e) { if (e.timeout) throw e; continue; }
     me = { ref: roomRef(code, `/players/${uid}`), data };
     await D.onDisconnect(me.ref).remove();
     return code;
@@ -71,10 +74,10 @@ export async function createRoom(name, track) {
 export async function joinRoom(input, name) {
   const code = normalizeCode(input);
   if (!code) return 'not-found';
-  const room = (await D.get(roomRef(code))).val();
+  const room = (await within(D.get(roomRef(code)), 'finding room')).val();
   if (!room) return 'not-found';
   if (Object.keys(room.players ?? {}).length >= MAX_PLAYERS) return 'full';
-  try { await enter(code, name); } catch { return 'not-found'; }
+  try { await enter(code, name); } catch (e) { if (e.timeout) throw e; return 'not-found'; }
   return 'ok';
 }
 

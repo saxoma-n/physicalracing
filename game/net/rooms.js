@@ -31,9 +31,10 @@ export function nextHost(players) {
 }
 
 // players: { uid: { raced, finishTime } } with finishTime in server ms.
-export function raceOver(players, now) {
+// startAt: times before it belong to an earlier race (a player who missed this one) and don't count.
+export function raceOver(players, now, startAt = -Infinity) {
   const racers = Object.values(players ?? {}).filter(p => p.raced);
-  const times = racers.map(p => p.finishTime).filter(t => typeof t === 'number');
+  const times = racers.map(p => p.finishTime).filter(t => typeof t === 'number' && t >= startAt);
   if (times.length === racers.length) return true;
   return times.length > 0 && now - Math.min(...times) >= END_GRACE_MS;
 }

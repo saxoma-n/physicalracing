@@ -8,7 +8,7 @@ const IDLE = { throttle: 0, steer: 0, brake: 0 };
 // startAt: the now() value at which the race clock starts (input is locked before it).
 export function createSession({ RAPIER, renderer, hud, input, layout, now, startAt, onEvent = () => {}, onFrame = () => {} }) {
   const phys = createPhysics(RAPIER, layout);
-  let race, acc = 0, last = performance.now(), raf = 0, cam = null;
+  let race, acc = 0, last = performance.now(), raf = 0, cam = null, stopped = false;
 
   function reset(at) {
     startAt = at;
@@ -63,6 +63,10 @@ export function createSession({ RAPIER, renderer, hud, input, layout, now, start
   raf = requestAnimationFrame(frame);
   return {
     restart: reset,
-    stop() { cancelAnimationFrame(raf); renderer.player.show(false); hud.clear(); },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      cancelAnimationFrame(raf); phys.free(); renderer.player.show(false); hud.clear();
+    },
   };
 }

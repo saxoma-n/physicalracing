@@ -66,3 +66,9 @@ test('raceOver: true when no racers remain (everyone left)', () => {
   assert.equal(raceOver({ late: P(false) }, 0), true);
   assert.equal(raceOver({}, 0), true);
 });
+
+test('raceOver ignores finish times from before this race started', () => {
+  const startAt = 500000;
+  const players = { a: P(true, 1000), b: P(true) }; // a finished the PREVIOUS race and missed this one
+  assert.equal(raceOver(players, startAt + 1000, startAt), false);
+});

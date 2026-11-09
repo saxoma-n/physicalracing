@@ -77,5 +77,5 @@ export function createPhysics(RAPIER, layout) {
     world.step();
   }
 
-  return { car, step };
+  return { car, step, free: () => world.free() };
 }

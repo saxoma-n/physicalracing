@@ -163,10 +163,10 @@ export function runMulti(code) {
 
   function showResults() {
     if (!session || !room) return;
-    const over = raceOver(room.players, net.serverNow());
+    const over = raceOver(room.players, net.serverNow(), room.startAt);
     if (!finished && !over) return;
     const rows = Object.values(room.players ?? {}).filter(p => p.raced)
-      .map(p => ({ name: p.name, ms: typeof p.finishTime === 'number' ? Math.max(0, p.finishTime - room.startAt) : null }))
+      .map(p => ({ name: p.name, ms: typeof p.finishTime === 'number' && p.finishTime >= room.startAt ? p.finishTime - room.startAt : null }))
       .sort((a, b) => (a.ms ?? Infinity) - (b.ms ?? Infinity));
     hud.results(rows, over ? 'Race over' : 'Results');
     hud.message(over ? 'Back to the lobby in a moment…' : 'Finished! Waiting for the others…');
@@ -179,6 +179,7 @@ export function runMulti(code) {
     session?.stop();
     session = null;
     syncGhosts();
+    net.updateMe({ raced: false, finishTime: null }); // don't carry this race into one we might miss
     raceStartAt = null;
     $('lobby').hidden = false;
     menuStop ??= orbit(currentLayout ?? fallbackLayout);
@@ -207,17 +208,19 @@ export function runMulti(code) {
       : 'Race in progress. You will join the next one.';
   }
 
-  let currentLayout = null, fallbackLayout = null;
+  let currentLayout = null, fallbackLayout = null, left = false;
 
   async function startRace(r) {
     raceStartAt = r.startAt;
     menuStop?.(); menuStop = null;
     const layout = await loadTrack(r.track);
     currentLayout = layout;
-    if (raceStartAt !== r.startAt) return; // a newer state arrived while loading
+    if (left || raceStartAt !== r.startAt) return; // left, or a newer state arrived while loading
     $('lobby').hidden = true;
     finished = false;
     await net.updateMe({ checkpoint: 0, finishTime: null, raced: true });
+    if (left || raceStartAt !== r.startAt) return;
+    session?.stop(); // we may have missed the 'lobby' state that normally ends the last race
     session = createSession({
       RAPIER, renderer, hud, input, layout, now: net.serverNow, startAt: r.startAt,
       onEvent(evt, race) {
@@ -258,7 +261,7 @@ export function runMulti(code) {
     if (!isHost() || !room) return;
     const now = net.serverNow();
     if (room.state === 'countdown' && now >= room.startAt) net.setState(code, 'racing');
-    if (room.state === 'racing' && raceOver(room.players, now)) {
+    if (room.state === 'racing' && raceOver(room.players, now, room.startAt)) {
       overSince ??= now;
       if (now - overSince >= 10000) { overSince = null; net.setState(code, 'lobby'); }
     }
@@ -269,6 +272,7 @@ export function runMulti(code) {
   $('leave').onclick = () => leave();
 
   async function leave(message) {
+    left = true;
     timers.forEach(clearInterval);
     session?.stop();
     session = null;
@@ -282,7 +286,7 @@ export function runMulti(code) {
   }
   leaveCurrent = leave;
 
-  loadTrack(TRACKS[0].id).then(l => { fallbackLayout = l; if (!session) menuStop ??= orbit(l); });
+  loadTrack(TRACKS[0].id).then(l => { fallbackLayout = l; if (!session && !left) menuStop ??= orbit(l); });
   net.watchRoom(code, onRoom);
 }
 
