@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateTrack, layoutTrack } from '../game/track.js';
-import { PIECES, CELL, LEVEL, worldGeometry } from '../game/pieces.js';
+import { PIECES, CELL, LEVEL, ROAD_HALF, worldGeometry } from '../game/pieces.js';
 
 const p = (type, x, y, z, rot = 0) => ({ type, x, y, z, rot });
 const minimal = () => ({ name: 'T', pieces: [p('start', 0, 0, 0), p('straight', 0, 0, 1), p('finish', 0, 0, 2)] });
@@ -55,11 +55,11 @@ test('start pose sits above start cell facing rot', () => {
   assert.equal(L.start.yaw, Math.PI / 2);
 });
 
-test('checkpoint box covers its cell footprint and 6 units above the road', () => {
+test('checkpoint box covers its cell footprint and 30 m above the road (cars fly through at speed)', () => {
   const t = minimal(); t.pieces.splice(1, 0, p('checkpoint', 1, 0, 1));
   const box = layoutTrack(t).checkpoints[0];
   assert.deepEqual([box.min[0], box.max[0], box.min[2], box.max[2]], [CELL / 2, CELL * 1.5, CELL / 2, CELL * 1.5]);
-  assert.equal(box.max[1], 6);
+  assert.equal(box.max[1], 30);
 });
 
 test('bounds cover all pieces; minY is the lowest piece y*LEVEL', () => {
@@ -92,7 +92,7 @@ test('worldGeometry rotates a quarter turn around +Y and moves to the cell', () 
 test('slope rises exactly one LEVEL from entry to exit', () => {
   const v = PIECES.slope.geometry().vertices;
   const ys = []; for (let i = 1; i < v.length; i += 3) ys.push(v[i]);
-  assert.equal(Math.max(...ys), LEVEL);
+  assert.ok(Math.abs(Math.max(...ys) - (LEVEL + 1.2)) < 1e-9); // wall top at the high end
 });
 
 function signedVolume(g) {
@@ -112,8 +112,49 @@ test('every solid piece is closed with outward-facing triangles (positive volume
   }
 });
 
-test('straight slab is 8 wide, 1 thick, one cell long', () => {
-  assert.ok(Math.abs(signedVolume(PIECES.straight.geometry()) - 8 * 1 * CELL) < 1e-9);
+test('cells are 40 m with a 24 m road so the track suits very high speeds', () => {
+  assert.equal(CELL, 40);
+  assert.equal(ROAD_HALF, 12);
+});
+
+test('straight is a 22 m driving surface plus two 1 m walls 1.2 m high', () => {
+  // road 22 x 1 x CELL, walls 2 x (1 wide x 2.2 tall x CELL)
+  assert.ok(Math.abs(signedVolume(PIECES.straight.geometry()) - (22 * CELL + 2 * 2.2 * CELL)) < 1e-6);
+  const v = PIECES.straight.geometry().vertices, ys = [], xs = [];
+  for (let i = 0; i < v.length; i += 3) { xs.push(v[i]); ys.push(v[i + 1]); }
+  assert.ok(Math.abs(Math.max(...ys) - 1.2) < 1e-9);
+  assert.equal(Math.max(...xs), ROAD_HALF);
+});
+
+test('slope and ramps are smooth: no step between sections steeper than 12 degrees', () => {
+  for (const type of ['slope', 'ramp-up', 'ramp-down']) {
+    const prof = PIECES[type].profile, n = 40;
+    for (let i = 0; i < n; i++) {
+      const dy = prof((i + 1) / n) - prof(i / n);
+      assert.ok(Math.abs(Math.atan2(dy, CELL / n)) < 12 * Math.PI / 180, type);
+    }
+  }
+  assert.equal(PIECES.slope.profile(0), 0);
+  assert.equal(PIECES.slope.profile(1), LEVEL);
+  assert.equal(PIECES['ramp-up'].profile(1), LEVEL / 2);
+  assert.equal(PIECES['ramp-down'].profile(0), LEVEL / 2);
+});
+
+test('turns come in three radii: 20 m, 100 m and 260 m, each exiting a quarter turn left', () => {
+  for (const [type, span] of [['turn', 1], ['turn-m', 3], ['turn-l', 7]]) {
+    const [a, b] = PIECES[type].ends;
+    assert.deepEqual(a, [0, -CELL / 2, 0]);
+    assert.deepEqual(b, [(span - 0.5) * CELL, (span - 1) * CELL, 0], type);
+    assert.equal(PIECES[type].radius, (span - 0.5) * CELL);
+  }
+});
+
+test('every piece declares its two ends (gap ends have no height)', () => {
+  for (const [type, def] of Object.entries(PIECES)) {
+    assert.equal(def.ends.length, 2, type);
+    if (def.kind === 'gap') assert.equal(def.ends[0][2], null);
+  }
+  assert.deepEqual(PIECES.slope.ends[1], [0, CELL / 2, LEVEL]);
 });
 
 test('tracks/test.json is valid', async () => {

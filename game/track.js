@@ -1,6 +1,6 @@
 import { PIECES, CELL, pieceTransform } from './pieces.js';
 
-const BOX_HEIGHT = 6;
+const BOX_HEIGHT = 30; // tall enough to catch a car in mid-jump
 
 export function validateTrack(json) {
   if (!json || typeof json !== 'object' || !Array.isArray(json.pieces)) return ['track must be an object with a pieces array'];
