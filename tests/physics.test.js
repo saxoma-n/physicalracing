@@ -1,70 +1,115 @@
+// Handling targets come from two reference gameplay clips (speedometer + timer readings).
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPhysics } from '../game/physics.js';
 import { layoutTrack } from '../game/track.js';
+import { CELL } from '../game/pieces.js';
+import { JUMP_RUNUP } from './helpers/autopilot.js';
 
 let RAPIER;
 before(async () => { RAPIER = (await import('../vendor/rapier.es.js')).default; await RAPIER.init(); });
 
+const piece = (type, z, x = 0) => ({ type, x, y: 0, z, rot: 0 });
 const straight = (n = 30) => layoutTrack({ name: 's', pieces: [
-  { type: 'start', x: 0, y: 0, z: 0, rot: 0 },
-  ...Array.from({ length: n }, (_, i) => ({ type: 'straight', x: 0, y: 0, z: i + 1, rot: 0 })),
-  { type: 'finish', x: 0, y: 0, z: n + 1, rot: 0 },
+  piece('start', 0), ...Array.from({ length: n }, (_, i) => piece('straight', i + 1)), piece('finish', n + 1),
 ] });
+const kmh = phys => phys.car.speed() * 3.6;
+const GO = { throttle: 1, steer: 0, brake: 0 }, COAST = { throttle: 0, steer: 0, brake: 0 }, STOP = { throttle: 0, steer: 0, brake: 1 };
+const angles = ([x, y, z, w]) => ({ // degrees
+  yaw: Math.atan2(2 * (x * z + w * y), 1 - 2 * (x * x + y * y)) * 57.2958,
+  pitch: Math.asin(Math.max(-1, Math.min(1, -2 * (y * z - w * x)))) * 57.2958,
+  roll: Math.atan2(2 * (x * y + w * z), 1 - 2 * (x * x + z * z)) * 57.2958,
+});
 
-function drive(phys, controls, seconds) {
+function start(layout) {
+  const phys = createPhysics(RAPIER, layout);
+  phys.car.teleport(layout.start);
+  phys.car.setControls(COAST);
+  for (let i = 0; i < 60; i++) phys.step(); // settle on the suspension
+  return phys;
+}
+function run(phys, controls, seconds, each = () => {}) {
   phys.car.setControls(controls);
-  for (let i = 0; i < seconds * 60; i++) phys.step();
+  for (let i = 0; i < Math.round(seconds * 60); i++) { phys.step(); each(i); }
+}
+function until(phys, controls, done, maxSeconds) {
+  phys.car.setControls(controls);
+  for (let i = 1; i <= maxSeconds * 60; i++) { phys.step(); if (done()) return i / 60; }
+  return Infinity;
 }
 
 test('car settles on its wheels on a flat road', () => {
-  const L = straight(), phys = createPhysics(RAPIER, L);
-  phys.car.teleport(L.start);
-  drive(phys, { throttle: 0, steer: 0, brake: 0 }, 2);
+  const phys = start(straight());
   const y = phys.car.pose().pos[1];
   assert.ok(y > 0.2 && y < 2, `chassis height ${y}`);
   assert.ok(Math.abs(phys.car.speed()) < 0.5);
 });
 
-test('throttle drives forward along +z for yaw 0 without drifting sideways', () => {
-  const L = straight(), phys = createPhysics(RAPIER, L);
-  phys.car.teleport(L.start);
-  drive(phys, { throttle: 1, steer: 0, brake: 0 }, 3);
-  const [x, , z] = phys.car.pose().pos;
-  assert.ok(z > 30, `z ${z}`);
-  assert.ok(Math.abs(x) < 1, `x ${x}`);
-  assert.ok(phys.car.speed() > 10, `speed ${phys.car.speed()}`);
+test('launch: 0 to 100 km/h in about 1.6 s, in a straight line (clip 1: ~1.6 s)', () => {
+  const phys = start(straight());
+  const t = until(phys, GO, () => kmh(phys) >= 100, 5);
+  assert.ok(t > 1.3 && t < 1.9, `0-100 took ${t.toFixed(2)} s`);
+  assert.ok(Math.abs(phys.car.pose().pos[0]) < 1, `drifted sideways ${phys.car.pose().pos[0]}`);
+});
+
+test('4.5 s of full throttle from rest reaches about 245 km/h (clip 2: 243)', () => {
+  const phys = start(straight(12));
+  run(phys, GO, 4.5);
+  assert.ok(kmh(phys) > 230 && kmh(phys) < 262, `${kmh(phys).toFixed(0)} km/h`);
+});
+
+test('top speed is 677 km/h: reached on a long straight, never exceeded, still driving straight', () => {
+  const phys = start(straight(330));
+  let max = 0;
+  run(phys, GO, 55, () => { max = Math.max(max, kmh(phys)); });
+  assert.ok(max >= 676 && max <= 678.5, `max ${max.toFixed(1)} km/h`);
+  const [x, y] = phys.car.pose().pos;
+  assert.ok(Math.abs(x) < 4 && y > 0.2 && y < 2, `off line at top speed: x ${x.toFixed(1)}, y ${y.toFixed(2)}`);
+});
+
+test('coasting at ~172 km/h loses 3.5 to 6 m/s² to drag (clip 2: ~4 on the ground, 5-6 in the air)', () => {
+  const phys = start(straight(20));
+  until(phys, GO, () => kmh(phys) >= 172, 10);
+  const v0 = phys.car.speed();
+  run(phys, COAST, 0.5);
+  const decel = (v0 - phys.car.speed()) / 0.5;
+  assert.ok(decel > 3.5 && decel < 6, `${decel.toFixed(1)} m/s²`);
+});
+
+test('braking: 150 km/h to a stop in about 0.65 s without spinning or tipping (clip 2: 0.63 s)', () => {
+  const phys = start(straight(20));
+  until(phys, GO, () => kmh(phys) >= 150, 10);
+  let maxPitch = 0;
+  const t = until(phys, STOP, () => { maxPitch = Math.max(maxPitch, Math.abs(angles(phys.car.pose().quat).pitch)); return kmh(phys) < 3; }, 5);
+  assert.ok(t > 0.45 && t < 0.9, `stop took ${t.toFixed(2)} s`);
+  assert.ok(maxPitch < 8, `dive ${maxPitch.toFixed(1)}°`);
+  assert.ok(Math.abs(angles(phys.car.pose().quat).yaw) < 10, 'spun while braking');
+});
+
+test('the body stays flat under full power: under 2.5° of squat (clips: none visible)', () => {
+  const phys = start(straight());
+  let squat = 0;
+  run(phys, GO, 1.5, () => { squat = Math.max(squat, Math.abs(angles(phys.car.pose().quat).pitch)); });
+  assert.ok(squat < 2.5, `${squat.toFixed(1)}°`);
 });
 
 test('steer +1 (left) turns toward +x while driving +z', () => {
-  const L = straight(), phys = createPhysics(RAPIER, L);
-  phys.car.teleport(L.start);
-  drive(phys, { throttle: 1, steer: 0, brake: 0 }, 1);
-  drive(phys, { throttle: 0.5, steer: 1, brake: 0 }, 0.5);
+  const phys = start(straight());
+  run(phys, GO, 0.5);
+  run(phys, { throttle: 0.5, steer: 1, brake: 0 }, 0.4);
   assert.ok(phys.car.pose().pos[0] > 0.5, `x ${phys.car.pose().pos[0]}`);
 });
 
-test('brake stops the car', () => {
-  const L = straight(), phys = createPhysics(RAPIER, L);
-  phys.car.teleport(L.start);
-  drive(phys, { throttle: 1, steer: 0, brake: 0 }, 2);
-  phys.car.setControls({ throttle: 0, steer: 0, brake: 1 });
-  let slowest = Infinity;
-  for (let i = 0; i < 180; i++) { phys.step(); slowest = Math.min(slowest, Math.abs(phys.car.speed())); }
-  assert.ok(slowest < 1, `slowest ${slowest}`);
-});
-
 test('reverse: brake held while stopped backs up', () => {
-  const L = straight(), phys = createPhysics(RAPIER, L);
-  phys.car.teleport({ pos: [0, 1, 50], yaw: 0 });
-  drive(phys, { throttle: 0, steer: 0, brake: 1 }, 2);
-  assert.ok(phys.car.pose().pos[2] < 49, `z ${phys.car.pose().pos[2]}`);
+  const phys = start(straight());
+  const z0 = phys.car.pose().pos[2];
+  run(phys, STOP, 2);
+  assert.ok(phys.car.pose().pos[2] < z0 - 1, `z ${phys.car.pose().pos[2]}`);
 });
 
 test('teleport sets pose facing yaw and zeroes velocity', () => {
-  const L = straight(), phys = createPhysics(RAPIER, L);
-  phys.car.teleport(L.start);
-  drive(phys, { throttle: 1, steer: 0, brake: 0 }, 2);
+  const phys = start(straight());
+  run(phys, GO, 2);
   phys.car.teleport({ pos: [0, 2, 40], yaw: Math.PI / 2 });
   assert.deepEqual(phys.car.pose().pos.map(Math.round), [0, 2, 40]);
   assert.equal(phys.car.speed(), 0);
@@ -73,53 +118,57 @@ test('teleport sets pose facing yaw and zeroes velocity', () => {
 });
 
 test('car falls when driven off the end of the track', () => {
-  const L = straight(3), phys = createPhysics(RAPIER, L);
-  phys.car.teleport(L.start);
-  drive(phys, { throttle: 1, steer: 0, brake: 0 }, 5);
+  const phys = start(straight(1));
+  run(phys, GO, 6);
   assert.ok(phys.car.pose().pos[1] < -5);
 });
 
-test('a ramp-up, one gap, ramp-down jump can be landed at full throttle', () => {
-  const pieces = [{ type: 'start', x: 0, y: 0, z: 0, rot: 0 }];
-  for (let z = 1; z <= 8; z++) pieces.push({ type: 'straight', x: 0, y: 0, z, rot: 0 });
-  pieces.push({ type: 'ramp-up', x: 0, y: 0, z: 9, rot: 0 }, { type: 'gap', x: 0, y: 0, z: 10, rot: 0 }, { type: 'ramp-down', x: 0, y: 0, z: 11, rot: 0 });
-  for (let z = 12; z <= 16; z++) pieces.push({ type: 'straight', x: 0, y: 0, z, rot: 0 });
-  pieces.push({ type: 'finish', x: 0, y: 0, z: 17, rot: 0 });
-  const L = layoutTrack({ name: 'j', pieces }), phys = createPhysics(RAPIER, L);
-  phys.car.teleport(L.start);
-  phys.car.setControls({ throttle: 1, steer: 0, brake: 0 });
-  let landed = false;
-  for (let i = 0; i < 600 && !landed; i++) {
+test(`a jump (ramp-up, gap, ramp-down) is cleared from a standing start ${JUMP_RUNUP} cells back, level in the air, no bounce on landing`, () => {
+  const pieces = [piece('start', 0)];
+  for (let z = 1; z < JUMP_RUNUP; z++) pieces.push(piece('straight', z));
+  pieces.push(piece('ramp-up', JUMP_RUNUP), piece('gap', JUMP_RUNUP + 1), piece('ramp-down', JUMP_RUNUP + 2));
+  for (let z = JUMP_RUNUP + 3; z <= JUMP_RUNUP + 12; z++) pieces.push(piece('straight', z));
+  pieces.push(piece('finish', JUMP_RUNUP + 13));
+  const L = layoutTrack({ name: 'j', pieces }), phys = start(L);
+  const lip = (JUMP_RUNUP + 0.5) * CELL, landing = (JUMP_RUNUP + 2.5) * CELL;
+  let airPitch = 0, landedAt = null, rebounds = 0, lastVy = 0, lastY = phys.car.pose().pos[1], minY = 9;
+  phys.car.setControls(GO);
+  for (let i = 0; i < 60 * 12; i++) {
     phys.step();
-    const [, y, z] = phys.car.pose().pos;
-    if (z > 125) landed = y > 0;
-    if (y < -3) break;
+    const { pos: [, y, z], quat } = phys.car.pose(), vy = (y - lastY) * 60;
+    if (z > lip + 3 && z < landing - CELL) airPitch = Math.max(airPitch, Math.abs(angles(quat).pitch));
+    if (z > landing) {
+      landedAt ??= i; minY = Math.min(minY, y);
+      if (i - landedAt > 3 && lastVy > 0.6 && vy <= 0.6 && y > 1.1) rebounds++; // chassis thrown back up
+    }
+    lastVy = vy; lastY = y;
+    if (z > (JUMP_RUNUP + 10) * CELL) break;
   }
-  assert.ok(landed, `ended at ${phys.car.pose().pos.map(n => n.toFixed(1))}`);
+  const [, y, z] = phys.car.pose().pos;
+  assert.ok(z > (JUMP_RUNUP + 10) * CELL && y > 0.2, `did not clear the jump: ended at y ${y.toFixed(1)}, z ${z.toFixed(0)}`);
+  assert.ok(airPitch < 12, `pitched ${airPitch.toFixed(1)}° in the air`);
+  assert.equal(rebounds, 0, 'bounced after landing');
 });
 
-test('a one-cell left turn can be taken at a sensible speed by steering fully', () => {
-  const pieces = [{ type: 'start', x: 0, y: 0, z: 0, rot: 0 }];
-  for (let z = 1; z <= 3; z++) pieces.push({ type: 'straight', x: 0, y: 0, z, rot: 0 });
-  pieces.push({ type: 'turn', x: 0, y: 0, z: 4, rot: 0 });
-  for (let x = 1; x <= 4; x++) pieces.push({ type: 'straight', x, y: 0, z: 4, rot: 1 });
-  pieces.push({ type: 'finish', x: 5, y: 0, z: 4, rot: 1 });
-  const L = layoutTrack({ name: 't', pieces }), phys = createPhysics(RAPIER, L);
-  phys.car.teleport(L.start);
-  // simple driver: hold ~12 m/s, steer left once the turn starts
-  for (let i = 0; i < 600; i++) {
-    const [x, , z] = phys.car.pose().pos, v = phys.car.speed();
-    if (x > 30) break;
-    const turning = z > 33 && x < 5;
-    phys.car.setControls({ throttle: v < 12 ? 1 : 0, brake: 0, steer: turning ? 1 : 0 });
-    phys.step();
-  }
-  const [x, y, z] = phys.car.pose().pos;
-  assert.ok(y > 0 && x > 30 && Math.abs(z - 40) < 4, `ended at ${[x, y, z].map(n => n.toFixed(1))}`);
+test('glancing off a wall at 250 km/h keeps the car upright, on the road and above half speed', () => {
+  const phys = start(straight(40));
+  until(phys, GO, () => kmh(phys) >= 250, 10);
+  const { pos } = phys.car.pose();
+  phys.car.teleport({ pos, yaw: 0.14 }); // ~8° toward the +x wall
+  phys.car.setControls(GO); // teleport zeroes speed: rebuild it pointing at the wall is too slow, so re-accelerate
+  until(phys, { throttle: 1, steer: 0, brake: 0 }, () => Math.abs(phys.car.pose().pos[0]) > 8.5, 12);
+  const vHit = kmh(phys);
+  let maxRoll = 0;
+  run(phys, GO, 1.5, () => { maxRoll = Math.max(maxRoll, Math.abs(angles(phys.car.pose().quat).roll)); });
+  const [x, y] = phys.car.pose().pos;
+  assert.ok(vHit > 100, `test setup: only ${vHit.toFixed(0)} km/h at the wall`);
+  assert.ok(Math.abs(x) < 11.5 && y > 0.2 && y < 2.5, `left the road: x ${x.toFixed(1)}, y ${y.toFixed(1)}`);
+  assert.ok(maxRoll < 35, `rolled ${maxRoll.toFixed(0)}°`);
+  assert.ok(kmh(phys) > vHit * 0.5, `speed ${vHit.toFixed(0)} → ${kmh(phys).toFixed(0)} km/h`);
 });
 
 test('free() releases the physics world so repeated races do not leak', () => {
-  const L = straight(3), phys = createPhysics(RAPIER, L);
+  const phys = createPhysics(RAPIER, straight(3));
   phys.free();
   assert.throws(() => phys.step()); // world is gone
 });

@@ -36,3 +36,5 @@ export function formatTime(ms) {
   const m = Math.floor(t / 60000), s = Math.floor(t / 1000) % 60, f = t % 1000;
   return `${m}:${String(s).padStart(2, '0')}.${String(f).padStart(3, '0')}`;
 }
+
+export const formatDiff = ms => (ms < 0 ? '-' : '+') + formatTime(Math.abs(ms));

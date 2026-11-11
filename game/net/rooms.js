@@ -38,3 +38,12 @@ export function raceOver(players, now, startAt = -Infinity) {
   if (times.length === racers.length) return true;
   return times.length > 0 && now - Math.min(...times) >= END_GRACE_MS;
 }
+
+export const CAR_COLORS = [0x8a0f24, 0x1f5fbf, 0x1e8a4c, 0xe0a100, 0x6b2bb5, 0xe2601c, 0x0f9aa8, 0xd23f8e, 0x3c4452, 0xf2f2f2];
+
+// Same uid → same colour on every screen.
+export function colorFor(uid) {
+  let h = 0;
+  for (const ch of String(uid)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CAR_COLORS[h % CAR_COLORS.length];
+}
