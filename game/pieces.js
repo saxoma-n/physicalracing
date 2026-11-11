@@ -59,23 +59,25 @@ function road(sections) {
 const H = CELL / 2;
 const smooth = t => t * t * (3 - 2 * t);
 
-// Straight-line piece whose height follows profile(t), t = 0..1 along the cell.
+// at(t), t = 0..1, is the centre line: position, height and unit travel direction.
+const sample = (at, seg) => Array.from({ length: seg + 1 }, (_, i) => at(i / seg));
+
+// Straight-line piece whose height follows profile(t).
 function line(profile, kind = 'road') {
-  const SEG = profile(0.5) === profile(0) && profile(1) === profile(0) ? 1 : 10;
-  const geometry = () => road(Array.from({ length: SEG + 1 }, (_, i) =>
-    ({ x: 0, z: -H + (i / SEG) * CELL, y: profile(i / SEG), dx: 0, dz: 1 })));
-  return { kind, geometry, profile, ends: [[0, -H, profile(0)], [0, H, profile(1)]] };
+  const seg = profile(0.5) === profile(0) && profile(1) === profile(0) ? 1 : 10;
+  const at = t => ({ x: 0, z: -H + t * CELL, y: profile(t), dx: 0, dz: 1 });
+  return { kind, at, profile, geometry: () => road(sample(at, seg)), ends: [[0, -H, profile(0)], [0, H, profile(1)]] };
 }
 
 // Quarter turn to the left spanning `span` cells each way: enters heading +z at (0, -H),
 // exits heading +x. Centerline radius is (span - 0.5) cells.
 function turn(span) {
-  const R = (span - 0.5) * CELL, SEG = Math.max(8, Math.ceil((Math.PI / 2) * R / 8));
-  const geometry = () => road(Array.from({ length: SEG + 1 }, (_, i) => {
-    const a = Math.PI - (i / SEG) * (Math.PI / 2);
+  const R = (span - 0.5) * CELL, seg = Math.max(8, Math.ceil((Math.PI / 2) * R / 8));
+  const at = t => {
+    const a = Math.PI - t * (Math.PI / 2);
     return { x: R + R * Math.cos(a), z: -H + R * Math.sin(a), y: 0, dx: Math.sin(a), dz: -Math.cos(a) };
-  }));
-  return { kind: 'road', geometry, radius: R, ends: [[0, -H, 0], [R, (span - 1) * CELL, 0]] };
+  };
+  return { kind: 'road', at, radius: R, geometry: () => road(sample(at, seg)), ends: [[0, -H, 0], [R, (span - 1) * CELL, 0]] };
 }
 
 const flat = () => 0;
@@ -90,11 +92,17 @@ export const PIECES = {
   slope:       line(t => LEVEL * smooth(t)),
   'ramp-up':   line(t => (LEVEL / 2) * t * t),             // kicks up at the lip
   'ramp-down': line(t => (LEVEL / 2) * (1 - t) * (1 - t)), // mirror: catches a landing
-  gap:         { kind: 'gap', geometry: () => ({ vertices: [], indices: [] }), ends: [[0, -H, null], [0, H, null]] },
+  gap:         { ...line(flat, 'gap'), geometry: () => ({ vertices: [], indices: [] }), ends: [[0, -H, null], [0, H, null]] },
 };
 
 export function pieceTransform({ x, y, z, rot }) {
   return { pos: [x * CELL, y * LEVEL, z * CELL], yaw: rot * Math.PI / 2 };
+}
+
+// A local point [x, y, z] of a placed piece, in world space.
+export function worldPoint(piece, [lx, ly, lz]) {
+  const { pos, yaw } = pieceTransform(piece), c = Math.cos(yaw), s = Math.sin(yaw);
+  return [pos[0] + lx * c + lz * s, pos[1] + ly, pos[2] - lx * s + lz * c];
 }
 
 // Geometry of a placed piece in world space (rotation about +Y, then translation).

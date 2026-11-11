@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createPhysics } from '../game/physics.js';
 import { layoutTrack } from '../game/track.js';
 import { CELL } from '../game/pieces.js';
+import { JUMP_RUNUP } from './helpers/autopilot.js';
 
 let RAPIER;
 before(async () => { RAPIER = (await import('../vendor/rapier.es.js')).default; await RAPIER.init(); });
@@ -121,9 +122,6 @@ test('car falls when driven off the end of the track', () => {
   run(phys, GO, 6);
   assert.ok(phys.car.pose().pos[1] < -5);
 });
-
-// run-up cells a jump needs after a standing start; tracks.test.js holds built-in tracks to this
-export const JUMP_RUNUP = 4;
 
 test(`a jump (ramp-up, gap, ramp-down) is cleared from a standing start ${JUMP_RUNUP} cells back, level in the air, no bounce on landing`, () => {
   const pieces = [piece('start', 0)];

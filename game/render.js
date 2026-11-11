@@ -40,20 +40,20 @@ function gate(kind, checker) {
   const g = new THREE.Group();
   const postMat = mat(COLORS.post);
   for (const side of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 5, 0.5), postMat);
-    post.position.set(side * 4.6, 2.5, 0);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 1), postMat);
+    post.position.set(side * 12.5, 5, 0);
     post.castShadow = true;
     g.add(post);
   }
   const bannerMat = kind === 'finish'
     ? new THREE.MeshStandardMaterial({ map: checker, flatShading: true })
     : mat(COLORS[kind]);
-  const banner = new THREE.Mesh(new THREE.BoxGeometry(9.7, 1.1, 0.3), bannerMat);
-  banner.position.set(0, 5, 0);
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(26, 2.2, 0.6), bannerMat);
+  banner.position.set(0, 10, 0);
   banner.castShadow = true;
   g.add(banner);
   if (kind === 'finish') {
-    const strip = new THREE.Mesh(new THREE.PlaneGeometry(8, 1.5), new THREE.MeshStandardMaterial({ map: checker }));
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(22, 3), new THREE.MeshStandardMaterial({ map: checker }));
     strip.rotation.x = -Math.PI / 2;
     strip.position.y = 0.02;
     g.add(strip);
@@ -184,7 +184,7 @@ export function createRenderer(canvas) {
 
   const scene = new THREE.Scene();
   scene.background = skyTexture();
-  scene.fog = new THREE.Fog(COLORS.skyBottom, 180, 650);
+  scene.fog = new THREE.Fog(COLORS.skyBottom, 900, 6000);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8aa39a, 1.4));
 
   const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
@@ -194,10 +194,10 @@ export function createRenderer(canvas) {
   sun.shadow.bias = -0.0005;
   scene.add(sun, sun.target);
 
-  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
+  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 9000);
   const checker = checkerTexture();
   const trackGroup = new THREE.Group();
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), mat(COLORS.ground));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000), mat(COLORS.ground));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(trackGroup, ground);
@@ -221,16 +221,15 @@ export function createRenderer(canvas) {
     setTrack(layout) {
       trackGroup.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
       trackGroup.clear();
+      // one mesh per colour, not per piece: big tracks have hundreds of pieces
+      const byKind = {};
       for (const piece of layout.pieces) {
         const { kind } = PIECES[piece.type];
         if (kind === 'gap') continue;
         const { vertices, indices } = worldGeometry(piece);
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        geo.setIndex(indices);
-        const mesh = new THREE.Mesh(geo, mat(COLORS[kind] ?? COLORS.road));
-        mesh.receiveShadow = mesh.castShadow = true;
-        trackGroup.add(mesh);
+        const m = (byKind[kind] ??= { vertices: [], indices: [] }), base = m.vertices.length / 3;
+        for (const v of vertices) m.vertices.push(v);
+        for (const i of indices) m.indices.push(base + i);
         if (kind !== 'road') {
           const { pos, yaw } = pieceTransform(piece);
           const g = gate(kind, checker);
@@ -239,9 +238,18 @@ export function createRenderer(canvas) {
           trackGroup.add(g);
         }
       }
+      for (const [kind, { vertices, indices }] of Object.entries(byKind)) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geo.setIndex(indices);
+        const mesh = new THREE.Mesh(geo, mat(COLORS[kind] ?? COLORS.road));
+        mesh.receiveShadow = mesh.castShadow = true;
+        trackGroup.add(mesh);
+      }
       ground.position.y = layout.minY - 40;
     },
-    setCamera(pos, target) {
+    setCamera(pos, target, fov = 70) {
+      if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
       camera.position.fromArray(pos);
       camera.lookAt(target[0], target[1], target[2]);
       // keep the shadow area centered on what we look at

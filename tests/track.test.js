@@ -167,3 +167,12 @@ test('layout pieces keep grid fields so worldGeometry can consume them', () => {
   const L = layoutTrack(minimal());
   assert.deepEqual(worldGeometry(L.pieces[1]), worldGeometry(minimal().pieces[1]));
 });
+
+test("every piece's centre line runs from its first end to its second", () => {
+  for (const [type, def] of Object.entries(PIECES)) {
+    const a = def.at(0), b = def.at(1), [e0, e1] = def.ends;
+    assert.ok(Math.abs(a.x - e0[0]) < 1e-9 && Math.abs(a.z - e0[1]) < 1e-9, type);
+    assert.ok(Math.abs(b.x - e1[0]) < 1e-9 && Math.abs(b.z - e1[1]) < 1e-9, type);
+    if (def.kind !== 'gap') assert.ok(Math.abs(a.y - e0[2]) < 1e-9 && Math.abs(b.y - e1[2]) < 1e-9, type);
+  }
+});

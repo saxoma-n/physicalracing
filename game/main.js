@@ -21,7 +21,7 @@ export async function loadTrack(id) {
   const json = await (await fetch(`tracks/${id}.json`)).json();
   const errors = validateTrack(json);
   if (errors.length) throw new Error(`Track "${id}" is broken: ${errors[0]}`);
-  return layoutTrack(json);
+  return Object.assign(layoutTrack(json), { id });
 }
 
 const store = {

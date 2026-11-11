@@ -25,12 +25,14 @@ export const HANDLING = {
   suspensionRelaxation: 9,
   maxSuspensionTravel: 0.4,
   frictionSlip: 3.5,        // tyre grip as a multiple of wheel load: needed for the 6.5 g stops
-  sideFrictionStiffness: 1.2,
+  sideFrictionStiffness: 1.2, // front tyres
+  rearSideFriction: 0.8,      // rear tyres: a little softer than the fronts so the tail rotates into corners.
+                              // At 0.5 the car spins after jumps and under quick steering (autopilot tests fail)
   engineForce: 1425,        // per driven (rear) wheel: 2 × 1425 N / 150 kg = 19 m/s²
   reverseForce: 300,
   brakeForce: 41,           // per wheel, impulse per step: 4 × 41 × 60 / 150 kg ≈ 65 m/s²
   maxSpeed: 677 / 3.6,      // m/s
   maxSteer: 0.5,            // radians, parking speeds
-  steerLateral: 60,         // m/s² of cornering that full lock asks for; lock shrinks with speed² to hold this
+  steerLateral: 50,         // m/s² of cornering that full lock asks for; lock shrinks with speed² to hold this
   steerSpeed: 6,            // how fast the wheels turn toward the target, rad/s
 };

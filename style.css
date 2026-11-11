@@ -3,10 +3,19 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: #e4f3ff; color: var(--ink); font: 16px/1.4 system-ui, sans-serif; }
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #hud { position: fixed; inset: 0; pointer-events: none; font-weight: 700; }
-.hud-time { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font: 700 28px/1 ui-monospace, monospace; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.45); }
+.hud-bar { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; }
+.hud-bar[hidden] { display: none; }
+.hud-box { background: var(--panel); border-radius: 12px; padding: 8px 14px; box-shadow: 0 6px 20px rgba(20, 30, 60, .2); display: grid; justify-items: center; }
+.hud-box b { font: 700 22px/1.1 ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.hud-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.hud-times { grid-auto-flow: column; gap: 18px; align-items: end; }
+.hud-times > div { display: grid; justify-items: center; }
+.hud-now b { font-size: 30px; }
+.hud-diff.ahead { color: #13753a; } .hud-diff.behind { color: #b3261e; }
+.hud-speed { min-width: 96px; } .hud-speed b { font-size: 34px; }
 .hud-center { position: absolute; top: 30%; width: 100%; text-align: center; font-size: 96px; color: #fff; text-shadow: 0 4px 16px rgba(0,0,0,.45); }
 .hud-center.go { color: #7fcf95; }
-.hud-msg { position: absolute; bottom: 12%; width: 100%; text-align: center; font-size: 24px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+.hud-msg { position: absolute; bottom: 110px; width: 100%; text-align: center; font-size: 24px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
 .hud-results { position: absolute; top: 18%; left: 50%; transform: translateX(-50%); min-width: min(360px, calc(100% - 32px)); background: var(--panel); border-radius: 12px; padding: 12px 16px; border-spacing: 0 4px; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
 .hud-results caption { font-size: 20px; padding: 8px 0 4px; background: var(--panel); border-radius: 12px 12px 0 0; }
 .hud-results td { padding: 2px 8px; } .hud-results td:last-child { text-align: right; font-family: ui-monospace, monospace; }

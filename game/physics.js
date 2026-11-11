@@ -34,7 +34,7 @@ export function createPhysics(RAPIER, layout) {
     vc.setWheelSuspensionRelaxation(i, H.suspensionRelaxation);
     vc.setWheelMaxSuspensionTravel(i, H.maxSuspensionTravel);
     vc.setWheelFrictionSlip(i, H.frictionSlip);
-    vc.setWheelSideFrictionStiffness(i, H.sideFrictionStiffness);
+    vc.setWheelSideFrictionStiffness(i, i < 2 ? H.sideFrictionStiffness : H.rearSideFriction);
   });
 
   let controls = { throttle: 0, steer: 0, brake: 0 };
